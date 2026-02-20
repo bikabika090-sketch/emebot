@@ -26,21 +26,44 @@ const client = new Client({
 });
 
 client.once("ready", async () => {
-  console.log(`🌿 Emerald Ticket Bot Online as ${client.user.tag}`);
+  console.log(`🌿 Emerald Ticket v2 Online as ${client.user.tag}`);
 
-  const guild = await client.guilds.fetch(process.env.GUILD_ID);
-  await guild.commands.create({
-    name: "panel",
-    description: "Gửi ticket panel"
+  const panelChannel = await client.channels.fetch(config.panelChannel);
+
+  const embed = new EmbedBuilder()
+    .setColor("#00ff88")
+    .setTitle("🎫 Emerald Ticket System")
+    .setDescription("Nhấn nút bên dưới để tạo ticket.");
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("create_ticket")
+      .setLabel("Create Ticket")
+      .setStyle(ButtonStyle.Success)
+  );
+
+  await panelChannel.send({
+    embeds: [embed],
+    components: [row]
   });
 });
 
 client.on("interactionCreate", async interaction => {
 
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === "ticket_select") {
+  if (interaction.isButton()) {
 
-      const mode = interaction.values[0];
+    if (interaction.customId === "create_ticket") {
+
+      const existing = interaction.guild.channels.cache.find(
+        c => c.name === `ticket-${interaction.user.username}`
+      );
+
+      if (existing) {
+        return interaction.reply({
+          content: "❌ Bạn đã có ticket rồi!",
+          ephemeral: true
+        });
+      }
 
       const channel = await interaction.guild.channels.create({
         name: `ticket-${interaction.user.username}`,
@@ -70,28 +93,24 @@ client.on("interactionCreate", async interaction => {
 
       const embed = new EmbedBuilder()
         .setColor("#00ff88")
-        .setTitle("🎫 Emerald Ticket")
-        .setDescription(`**Mode:** ${mode}\n\nSupport sẽ hỗ trợ bạn sớm nhất có thể.`);
+        .setTitle("Chọn Mode Test")
+        .setDescription("Hãy chọn mode bạn muốn test.");
 
-      const buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("close")
-          .setLabel("Close")
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId("close_reason")
-          .setLabel("Close With Reason")
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId("claim")
-          .setLabel("Claim")
-          .setStyle(ButtonStyle.Success)
+      const menu = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("ticket_select")
+          .setPlaceholder("Chọn mode...")
+          .addOptions([
+            { label: "NETHERITE POT", value: "NETHERITE POT" },
+            { label: "CRYSTAL PVP", value: "CRYSTAL PVP" },
+            { label: "SMP KIT", value: "SMP KIT" }
+          ])
       );
 
       await channel.send({
         content: `<@${interaction.user.id}>`,
         embeds: [embed],
-        components: [buttons]
+        components: [menu]
       });
 
       await interaction.reply({
@@ -99,70 +118,36 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-  }
-
-  if (interaction.isButton()) {
 
     if (interaction.customId === "close") {
       await interaction.reply("🔒 Ticket sẽ đóng sau 5 giây...");
       setTimeout(() => interaction.channel.delete(), 5000);
     }
-
-    if (interaction.customId === "claim") {
-      await interaction.reply("🟢 Ticket đã được claim!");
-    }
-
-    if (interaction.customId === "close_reason") {
-      await interaction.reply("🔒 Ticket đóng bởi staff.");
-      setTimeout(() => interaction.channel.delete(), 5000);
-    }
   }
 
-  if (!interaction.isChatInputCommand()) return;
+  if (interaction.isStringSelectMenu()) {
 
-  if (interaction.commandName === "panel") {
+    if (interaction.customId === "ticket_select") {
 
-    const embed = new EmbedBuilder()
-      .setColor("#00ff88")
-      .setTitle("Chọn 1 trong 3 mode để Test.")
-      .setDescription(`━━━━━━━━━━━━━━━━━━
+      const mode = interaction.values[0];
 
-• NETHERITE POT  
-• CRYSTAL PVP  
-• SMP KIT  
+      const embed = new EmbedBuilder()
+        .setColor("#00ff88")
+        .setTitle("🎫 Emerald Ticket")
+        .setDescription(`Mode đã chọn: **${mode}**`);
 
-━━━━━━━━━━━━━━━━━━
+      const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("close")
+          .setLabel("Close")
+          .setStyle(ButtonStyle.Danger)
+      );
 
-**Lưu ý: ( test sever Premium )**
-
-• mcpvp.club  
-• as.stray.gg  
-• vnpvp.xyz  
-• as.catpvp.com  
-• as.strike.gg  
-• Minemen.club  
-• as.meowmc.fun  
-• as.leafpvp.icu (cpvp)  
-• teaamc.asia (cpvp)  
-• asiaprac.xyz (cpvp)  
-
-━━━━━━━━━━━━━━━━━━`);
-
-    const menu = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("ticket_select")
-        .setPlaceholder("Chọn mode test...")
-        .addOptions([
-          { label: "NETHERITE POT", value: "NETHERITE POT" },
-          { label: "CRYSTAL PVP", value: "CRYSTAL PVP" },
-          { label: "SMP KIT", value: "SMP KIT" }
-        ])
-    );
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [menu]
-    });
+      await interaction.update({
+        embeds: [embed],
+        components: [buttons]
+      });
+    }
   }
 });
 

@@ -1,4 +1,5 @@
 {
   "ticketCategory": "CATEGORY_ID",
-  "supportRole": "SUPPORT_ROLE_ID"
+  "supportRole": "ROLE_ID",
+  "panelChannel": "PANEL_CHANNEL_ID"
 }
