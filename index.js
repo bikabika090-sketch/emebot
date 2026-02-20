@@ -11,7 +11,11 @@ import {
   PermissionsBitField
 } from "discord.js";
 
-import config from "./config.json" assert { type: "json" };
+import fs from "fs";
+
+const config = JSON.parse(
+  fs.readFileSync("./config.json", "utf-8")
+);
 
 const client = new Client({
   intents: [
@@ -21,8 +25,14 @@ const client = new Client({
   ]
 });
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`🌿 Emerald Ticket Bot Online as ${client.user.tag}`);
+
+  const guild = await client.guilds.fetch(process.env.GUILD_ID);
+  await guild.commands.create({
+    name: "panel",
+    description: "Gửi ticket panel"
+  });
 });
 
 client.on("interactionCreate", async interaction => {
@@ -61,21 +71,17 @@ client.on("interactionCreate", async interaction => {
       const embed = new EmbedBuilder()
         .setColor("#00ff88")
         .setTitle("🎫 Emerald Ticket")
-        .setDescription(`**Mode:** ${mode}
-
-Support sẽ hỗ trợ bạn sớm nhất có thể.`);
+        .setDescription(`**Mode:** ${mode}\n\nSupport sẽ hỗ trợ bạn sớm nhất có thể.`);
 
       const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId("close")
           .setLabel("Close")
           .setStyle(ButtonStyle.Danger),
-
         new ButtonBuilder()
           .setCustomId("close_reason")
           .setLabel("Close With Reason")
           .setStyle(ButtonStyle.Secondary),
-
         new ButtonBuilder()
           .setCustomId("claim")
           .setLabel("Claim")
@@ -158,14 +164,6 @@ Support sẽ hỗ trợ bạn sớm nhất có thể.`);
       components: [menu]
     });
   }
-});
-
-client.on("ready", async () => {
-  const guild = await client.guilds.fetch(process.env.GUILD_ID);
-  await guild.commands.create({
-    name: "panel",
-    description: "Gửi ticket panel"
-  });
 });
 
 client.login(process.env.TOKEN);
