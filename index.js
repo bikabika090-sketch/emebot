@@ -25,6 +25,9 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+const TOKEN    = process.env.TOKEN;
+const GUILD_ID = process.env.GUILD_ID;
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,46 +36,38 @@ const client = new Client({
   ]
 });
 
-// ─── Đăng ký slash commands qua REST (không cần client.application) ───
-const commands = [
+const commandsList = [
   { name: "panel",      description: "Gửi ticket panel (legacy)" },
   { name: "setbotoday", description: "Đặt bot ticket vào kênh này" },
   { name: "close",      description: "Đóng ticket hiện tại" }
 ];
 
-async function registerCommands() {
-  const token   = process.env.TOKEN;
-  const guildId = process.env.GUILD_ID;
+client.once("ready", async () => {
+  console.log(`🌿 Bot Online: ${client.user.tag} (ID: ${client.user.id})`);
 
-  if (!token) { console.error("❌ Thiếu TOKEN trong env!"); return; }
-
-  const rest = new REST({ version: "10" }).setToken(token);
+  // Dùng client.user.id làm CLIENT_ID — luôn đúng 100%
+  const CLIENT_ID = client.user.id;
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
 
   try {
-    // Lấy client ID từ token (phần đầu base64)
-    const clientId = Buffer.from(token.split(".")[0], "base64").toString("utf-8");
-
-    if (guildId) {
-      // Guild command — hiện ngay lập tức ✅
-      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-      console.log(`✅ Guild commands đã đăng ký (guild: ${guildId})`);
+    if (GUILD_ID) {
+      await rest.put(
+        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+        { body: commandsList }
+      );
+      console.log(`✅ Guild commands đã đăng ký thành công!`);
     } else {
-      // Global command — mất ~1 giờ lần đầu
-      await rest.put(Routes.applicationCommands(clientId), { body: commands });
-      console.log("✅ Global commands đã đăng ký");
+      await rest.put(
+        Routes.applicationCommands(CLIENT_ID),
+        { body: commandsList }
+      );
+      console.log("✅ Global commands đã đăng ký!");
     }
   } catch (err) {
-    console.error("❌ Lỗi đăng ký commands:", err.message);
+    console.error("❌ Lỗi đăng ký commands:", err);
   }
-}
-
-client.once("ready", async () => {
-  console.log(`🌿 Emerald Ticket Bot Online as ${client.user.tag}`);
-  await registerCommands();
 });
 
-// ─────────────────────────────────────────────
-// Hàm tạo embed panel
 // ─────────────────────────────────────────────
 function buildPanelEmbed() {
   return new EmbedBuilder()
@@ -117,8 +112,6 @@ function buildCreateTicketButton() {
   );
 }
 
-// ─────────────────────────────────────────────
-// Xử lý interaction
 // ─────────────────────────────────────────────
 client.on("interactionCreate", async interaction => {
 
@@ -210,8 +203,8 @@ client.on("interactionCreate", async interaction => {
   // ══ SELECT MENU → Tạo channel ticket ══
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === "ticket_select") {
-      const mode      = interaction.values[0];
-      const safeName  = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const mode        = interaction.values[0];
+      const safeName    = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
       const channelName = `ticket-${safeName}`;
 
       const channel = await interaction.guild.channels.create({
@@ -219,8 +212,8 @@ client.on("interactionCreate", async interaction => {
         type: ChannelType.GuildText,
         parent: config.ticketCategory || null,
         permissionOverwrites: [
-          { id: interaction.guild.id,   deny:  [PermissionsBitField.Flags.ViewChannel] },
-          { id: interaction.user.id,    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+          { id: interaction.guild.id, deny:  [PermissionsBitField.Flags.ViewChannel] },
+          { id: interaction.user.id,  allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
           ...(config.supportRole ? [{ id: config.supportRole, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }] : [])
         ]
       });
@@ -268,4 +261,4 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-client.login(process.env.TOKEN);
+client.login(TOKEN);
