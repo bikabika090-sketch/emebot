@@ -1,4 +1,4 @@
 {
-  "ticketCategory": "CATEGORY_ID",
-  "supportRole": "SUPPORT_ROLE_ID"
+  "ticketCategory": null,
+  "supportRole": null
 }
