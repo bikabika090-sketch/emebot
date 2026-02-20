@@ -222,10 +222,15 @@ client.on("interactionCreate", async interaction => {
         });
       }
 
+      // Tính position cao nhất để kênh xuống dưới cùng
+      const allChannels = interaction.guild.channels.cache;
+      const maxPos = Math.max(0, ...allChannels.map(c => c.position || 0));
+
       const channel = await interaction.guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: config.ticketCategory || null,
+        position: maxPos + 1,
         permissionOverwrites: [
           { id: interaction.guild.id, deny:  [PermissionsBitField.Flags.ViewChannel] },
           { id: interaction.user.id,  allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
