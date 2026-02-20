@@ -1,4 +1,3 @@
-
 import {
   Client,
   GatewayIntentBits,
@@ -8,14 +7,15 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  PermissionsBitField
+  PermissionsBitField,
+  REST,
+  Routes
 } from "discord.js";
 
 import fs from "fs";
 
 const config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
 
-// Lưu channel panel vào file data
 const DATA_FILE = "./data.json";
 function loadData() {
   if (!fs.existsSync(DATA_FILE)) return {};
@@ -33,29 +33,47 @@ const client = new Client({
   ]
 });
 
+// ─── Đăng ký slash commands qua REST (không cần client.application) ───
+const commands = [
+  { name: "panel",      description: "Gửi ticket panel (legacy)" },
+  { name: "setbotoday", description: "Đặt bot ticket vào kênh này" },
+  { name: "close",      description: "Đóng ticket hiện tại" }
+];
+
+async function registerCommands() {
+  const token   = process.env.TOKEN;
+  const guildId = process.env.GUILD_ID;
+
+  if (!token) { console.error("❌ Thiếu TOKEN trong env!"); return; }
+
+  const rest = new REST({ version: "10" }).setToken(token);
+
+  try {
+    // Lấy client ID từ token (phần đầu base64)
+    const clientId = Buffer.from(token.split(".")[0], "base64").toString("utf-8");
+
+    if (guildId) {
+      // Guild command — hiện ngay lập tức ✅
+      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+      console.log(`✅ Guild commands đã đăng ký (guild: ${guildId})`);
+    } else {
+      // Global command — mất ~1 giờ lần đầu
+      await rest.put(Routes.applicationCommands(clientId), { body: commands });
+      console.log("✅ Global commands đã đăng ký");
+    }
+  } catch (err) {
+    console.error("❌ Lỗi đăng ký commands:", err.message);
+  }
+}
+
 client.once("ready", async () => {
   console.log(`🌿 Emerald Ticket Bot Online as ${client.user.tag}`);
-
-  const guild = await client.guilds.fetch(process.env.GUILD_ID);
-
-  await guild.commands.set([
-    {
-      name: "panel",
-      description: "Gửi ticket panel (legacy)"
-    },
-    {
-      name: "setbotoday",
-      description: "Đặt bot ticket vào kênh này — bot sẽ gửi panel tại đây"
-    },
-    {
-      name: "close",
-      description: "Đóng ticket hiện tại"
-    }
-  ]);
-
-  console.log("✅ Slash commands đã đăng ký.");
+  await registerCommands();
 });
 
+// ─────────────────────────────────────────────
+// Hàm tạo embed panel
+// ─────────────────────────────────────────────
 function buildPanelEmbed() {
   return new EmbedBuilder()
     .setColor("#00ff88")
@@ -99,47 +117,41 @@ function buildCreateTicketButton() {
   );
 }
 
+// ─────────────────────────────────────────────
+// Xử lý interaction
+// ─────────────────────────────────────────────
 client.on("interactionCreate", async interaction => {
 
-  // ══════════════════════════════════════
-  // SLASH COMMANDS
-  // ══════════════════════════════════════
+  // ══ SLASH COMMANDS ══
   if (interaction.isChatInputCommand()) {
 
-    // /setbotoday
     if (interaction.commandName === "setbotoday") {
       if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
         return interaction.reply({ content: "❌ Bạn không có quyền dùng lệnh này.", ephemeral: true });
       }
-
       const panelMsg = await interaction.channel.send({
         embeds: [buildPanelEmbed()],
         components: [buildCreateTicketButton()]
       });
-
       const data = loadData();
-      data.panelChannel = interaction.channelId;
+      data.panelChannel   = interaction.channelId;
       data.panelMessageId = panelMsg.id;
       saveData(data);
-
       return interaction.reply({
         content: `✅ Bot ticket đã được đặt tại ${interaction.channel}!`,
         ephemeral: true
       });
     }
 
-    // /close
     if (interaction.commandName === "close") {
-      const ch = interaction.channel;
-      if (!ch.name.startsWith("ticket-")) {
+      if (!interaction.channel.name.startsWith("ticket-")) {
         return interaction.reply({ content: "❌ Lệnh này chỉ dùng trong kênh ticket.", ephemeral: true });
       }
       await interaction.reply("🔒 Ticket sẽ đóng sau 5 giây...");
-      setTimeout(() => ch.delete().catch(() => {}), 5000);
+      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
       return;
     }
 
-    // /panel (legacy)
     if (interaction.commandName === "panel") {
       await interaction.reply({
         embeds: [buildPanelEmbed()],
@@ -148,22 +160,15 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // ══════════════════════════════════════
-  // BUTTONS
-  // ══════════════════════════════════════
+  // ══ BUTTONS ══
   if (interaction.isButton()) {
 
-    // Nút Tạo Ticket → hiện select menu ephemeral
     if (interaction.customId === "open_ticket") {
       const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const existing = interaction.guild.channels.cache.find(c => c.name === `ticket-${safeName}`);
+      const existing  = interaction.guild.channels.cache.find(c => c.name === `ticket-${safeName}`);
       if (existing) {
-        return interaction.reply({
-          content: `⚠️ Bạn đã có ticket rồi: ${existing}`,
-          ephemeral: true
-        });
+        return interaction.reply({ content: `⚠️ Bạn đã có ticket rồi: ${existing}`, ephemeral: true });
       }
-
       const selectEmbed = new EmbedBuilder()
         .setColor("#00ff88")
         .setTitle("🎮 Chọn Mode Test")
@@ -174,38 +179,17 @@ client.on("interactionCreate", async interaction => {
           `🗡️  **SMP KIT** — Kit trên SMP\n` +
           `━━━━━━━━━━━━━━━━━━━━━`
         );
-
       const menu = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId("ticket_select")
           .setPlaceholder("🎯 Chọn mode test của bạn...")
           .addOptions([
-            {
-              label: "NETHERITE POT",
-              description: "PvP kiểu pot với netherite",
-              emoji: "⚔️",
-              value: "NETHERITE POT"
-            },
-            {
-              label: "CRYSTAL PVP",
-              description: "PvP bằng crystal",
-              emoji: "💎",
-              value: "CRYSTAL PVP"
-            },
-            {
-              label: "SMP KIT",
-              description: "Kit trên server SMP",
-              emoji: "🗡️",
-              value: "SMP KIT"
-            }
+            { label: "NETHERITE POT", description: "PvP kiểu pot với netherite", emoji: "⚔️", value: "NETHERITE POT" },
+            { label: "CRYSTAL PVP",   description: "PvP bằng crystal",           emoji: "💎", value: "CRYSTAL PVP"   },
+            { label: "SMP KIT",       description: "Kit trên server SMP",         emoji: "🗡️", value: "SMP KIT"       }
           ])
       );
-
-      return interaction.reply({
-        embeds: [selectEmbed],
-        components: [menu],
-        ephemeral: true
-      });
+      return interaction.reply({ embeds: [selectEmbed], components: [menu], ephemeral: true });
     }
 
     if (interaction.customId === "close") {
@@ -223,13 +207,11 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // ══════════════════════════════════════
-  // SELECT MENU → Tạo channel ticket
-  // ══════════════════════════════════════
+  // ══ SELECT MENU → Tạo channel ticket ══
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === "ticket_select") {
-      const mode = interaction.values[0];
-      const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const mode      = interaction.values[0];
+      const safeName  = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
       const channelName = `ticket-${safeName}`;
 
       const channel = await interaction.guild.channels.create({
@@ -237,34 +219,13 @@ client.on("interactionCreate", async interaction => {
         type: ChannelType.GuildText,
         parent: config.ticketCategory || null,
         permissionOverwrites: [
-          {
-            id: interaction.guild.id,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: interaction.user.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          },
-          ...(config.supportRole ? [{
-            id: config.supportRole,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          }] : [])
+          { id: interaction.guild.id,   deny:  [PermissionsBitField.Flags.ViewChannel] },
+          { id: interaction.user.id,    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+          ...(config.supportRole ? [{ id: config.supportRole, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }] : [])
         ]
       });
 
-      const modeEmoji = {
-        "NETHERITE POT": "⚔️",
-        "CRYSTAL PVP": "💎",
-        "SMP KIT": "🗡️"
-      }[mode] || "🎮";
+      const modeEmoji = { "NETHERITE POT": "⚔️", "CRYSTAL PVP": "💎", "SMP KIT": "🗡️" }[mode] || "🎮";
 
       const ticketEmbed = new EmbedBuilder()
         .setColor("#00ff88")
@@ -287,18 +248,9 @@ client.on("interactionCreate", async interaction => {
         .setTimestamp();
 
       const buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("close")
-          .setLabel("🔒 Close")
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId("close_reason")
-          .setLabel("📝 Close With Reason")
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId("claim")
-          .setLabel("✅ Claim")
-          .setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId("close")        .setLabel("🔒 Close")             .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("close_reason") .setLabel("📝 Close With Reason") .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("claim")        .setLabel("✅ Claim")              .setStyle(ButtonStyle.Success)
       );
 
       await channel.send({
