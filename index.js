@@ -50,21 +50,14 @@ client.once("ready", async () => {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
   try {
-    if (GUILD_ID) {
-      await rest.put(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-        { body: commandsList }
-      );
-      console.log(`✅ Guild commands đã đăng ký thành công!`);
-    } else {
-      await rest.put(
-        Routes.applicationCommands(CLIENT_ID),
-        { body: commandsList }
-      );
-      console.log("✅ Global commands đã đăng ký!");
-    }
+    // Global commands — không cần guild OAuth scope
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commandsList }
+    );
+    console.log("✅ Global commands đã đăng ký thành công!");
   } catch (err) {
-    console.error("❌ Lỗi đăng ký commands:", err);
+    console.error("❌ Lỗi đăng ký commands:", err.message);
   }
 });
 
