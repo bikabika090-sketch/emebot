@@ -237,6 +237,8 @@ client.on("interactionCreate", async interaction => {
           ...(config.supportRole ? [{ id: config.supportRole, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }] : [])
         ]
       });
+      // Đẩy kênh xuống dưới cùng sau khi tạo
+      await channel.setPosition(999).catch(() => {});
 
       const modeEmoji = { "NETHERITE POT": "⚔️", "CRYSTAL PVP": "💎", "SMP KIT": "🗡️" }[mode] || "🎮";
 
