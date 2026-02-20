@@ -42,15 +42,14 @@ const commandsList = [
   { name: "close",      description: "Đóng ticket hiện tại" }
 ];
 
-client.once("ready", async () => {
+// Dùng clientReady (v14+) thay vì ready
+client.once("clientReady", async () => {
   console.log(`🌿 Bot Online: ${client.user.tag} (ID: ${client.user.id})`);
 
-  // Dùng client.user.id làm CLIENT_ID — luôn đúng 100%
   const CLIENT_ID = client.user.id;
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
   try {
-    // Global commands — không cần guild OAuth scope
     await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commandsList }
@@ -59,6 +58,11 @@ client.once("ready", async () => {
   } catch (err) {
     console.error("❌ Lỗi đăng ký commands:", err.message);
   }
+});
+
+// Bắt lỗi toàn cục để bot không crash
+process.on("unhandledRejection", err => {
+  console.error("⚠️ Unhandled rejection:", err?.message || err);
 });
 
 // ─────────────────────────────────────────────
@@ -107,98 +111,116 @@ function buildCreateTicketButton() {
 
 // ─────────────────────────────────────────────
 client.on("interactionCreate", async interaction => {
+  try {
 
-  // ══ SLASH COMMANDS ══
-  if (interaction.isChatInputCommand()) {
+    // ══ SLASH COMMANDS ══
+    if (interaction.isChatInputCommand()) {
 
-    if (interaction.commandName === "setbotoday") {
-      if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        return interaction.reply({ content: "❌ Bạn không có quyền dùng lệnh này.", ephemeral: true });
+      if (interaction.commandName === "setbotoday") {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+          return interaction.reply({ content: "❌ Bạn không có quyền dùng lệnh này.", ephemeral: true });
+        }
+        const panelMsg = await interaction.channel.send({
+          embeds: [buildPanelEmbed()],
+          components: [buildCreateTicketButton()]
+        });
+        const data = loadData();
+        data.panelChannel   = interaction.channelId;
+        data.panelMessageId = panelMsg.id;
+        saveData(data);
+        return interaction.reply({
+          content: `✅ Bot ticket đã được đặt tại ${interaction.channel}!`,
+          ephemeral: true
+        });
       }
-      const panelMsg = await interaction.channel.send({
-        embeds: [buildPanelEmbed()],
-        components: [buildCreateTicketButton()]
-      });
-      const data = loadData();
-      data.panelChannel   = interaction.channelId;
-      data.panelMessageId = panelMsg.id;
-      saveData(data);
-      return interaction.reply({
-        content: `✅ Bot ticket đã được đặt tại ${interaction.channel}!`,
-        ephemeral: true
-      });
+
+      if (interaction.commandName === "close") {
+        if (!interaction.channel.name.startsWith("ticket-")) {
+          return interaction.reply({ content: "❌ Lệnh này chỉ dùng trong kênh ticket.", ephemeral: true });
+        }
+        await interaction.reply("🔒 Ticket sẽ đóng sau 5 giây...");
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+        return;
+      }
+
+      if (interaction.commandName === "panel") {
+        return interaction.reply({
+          embeds: [buildPanelEmbed()],
+          components: [buildCreateTicketButton()]
+        });
+      }
     }
 
-    if (interaction.commandName === "close") {
-      if (!interaction.channel.name.startsWith("ticket-")) {
-        return interaction.reply({ content: "❌ Lệnh này chỉ dùng trong kênh ticket.", ephemeral: true });
-      }
-      await interaction.reply("🔒 Ticket sẽ đóng sau 5 giây...");
-      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-      return;
-    }
+    // ══ BUTTONS ══
+    if (interaction.isButton()) {
 
-    if (interaction.commandName === "panel") {
-      await interaction.reply({
-        embeds: [buildPanelEmbed()],
-        components: [buildCreateTicketButton()]
-      });
-    }
-  }
+      if (interaction.customId === "open_ticket") {
+        const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const existing  = interaction.guild.channels.cache.find(c => c.name === `ticket-${safeName}`);
+        if (existing) {
+          return interaction.reply({ content: `⚠️ Bạn đã có ticket rồi: ${existing}`, ephemeral: true });
+        }
 
-  // ══ BUTTONS ══
-  if (interaction.isButton()) {
+        const selectEmbed = new EmbedBuilder()
+          .setColor("#00ff88")
+          .setTitle("🎮 Chọn Mode Test")
+          .setDescription(
+            `━━━━━━━━━━━━━━━━━━━━━\n` +
+            `⚔️  **NETHERITE POT** — PvP kiểu pot\n` +
+            `💎  **CRYSTAL PVP** — PvP crystal\n` +
+            `🗡️  **SMP KIT** — Kit trên SMP\n` +
+            `━━━━━━━━━━━━━━━━━━━━━`
+          );
 
-    if (interaction.customId === "open_ticket") {
-      const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const existing  = interaction.guild.channels.cache.find(c => c.name === `ticket-${safeName}`);
-      if (existing) {
-        return interaction.reply({ content: `⚠️ Bạn đã có ticket rồi: ${existing}`, ephemeral: true });
-      }
-      const selectEmbed = new EmbedBuilder()
-        .setColor("#00ff88")
-        .setTitle("🎮 Chọn Mode Test")
-        .setDescription(
-          `━━━━━━━━━━━━━━━━━━━━━\n` +
-          `⚔️  **NETHERITE POT** — PvP kiểu pot\n` +
-          `💎  **CRYSTAL PVP** — PvP crystal\n` +
-          `🗡️  **SMP KIT** — Kit trên SMP\n` +
-          `━━━━━━━━━━━━━━━━━━━━━`
+        const menu = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId("ticket_select")
+            .setPlaceholder("🎯 Chọn mode test của bạn...")
+            .addOptions([
+              { label: "NETHERITE POT", description: "PvP kiểu pot với netherite", emoji: "⚔️", value: "NETHERITE POT" },
+              { label: "CRYSTAL PVP",   description: "PvP bằng crystal",           emoji: "💎", value: "CRYSTAL PVP"   },
+              { label: "SMP KIT",       description: "Kit trên server SMP",         emoji: "🗡️", value: "SMP KIT"       }
+            ])
         );
-      const menu = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId("ticket_select")
-          .setPlaceholder("🎯 Chọn mode test của bạn...")
-          .addOptions([
-            { label: "NETHERITE POT", description: "PvP kiểu pot với netherite", emoji: "⚔️", value: "NETHERITE POT" },
-            { label: "CRYSTAL PVP",   description: "PvP bằng crystal",           emoji: "💎", value: "CRYSTAL PVP"   },
-            { label: "SMP KIT",       description: "Kit trên server SMP",         emoji: "🗡️", value: "SMP KIT"       }
-          ])
-      );
-      return interaction.reply({ embeds: [selectEmbed], components: [menu], ephemeral: true });
+
+        return interaction.reply({ embeds: [selectEmbed], components: [menu], ephemeral: true });
+      }
+
+      if (interaction.customId === "close") {
+        await interaction.reply("🔒 Ticket sẽ đóng sau 5 giây...");
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+        return;
+      }
+
+      if (interaction.customId === "close_reason") {
+        await interaction.reply("🔒 Ticket đóng bởi staff.");
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+        return;
+      }
+
+      if (interaction.customId === "claim") {
+        return interaction.reply(`🟢 Ticket đã được claim bởi <@${interaction.user.id}>!`);
+      }
     }
 
-    if (interaction.customId === "close") {
-      await interaction.reply("🔒 Ticket sẽ đóng sau 5 giây...");
-      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-    }
+    // ══ SELECT MENU → Tạo channel ticket ══
+    if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") {
+      // Defer ngay lập tức để tránh timeout 3 giây
+      await interaction.deferUpdate();
 
-    if (interaction.customId === "close_reason") {
-      await interaction.reply("🔒 Ticket đóng bởi staff.");
-      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-    }
-
-    if (interaction.customId === "claim") {
-      await interaction.reply(`🟢 Ticket đã được claim bởi <@${interaction.user.id}>!`);
-    }
-  }
-
-  // ══ SELECT MENU → Tạo channel ticket ══
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === "ticket_select") {
       const mode        = interaction.values[0];
       const safeName    = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
       const channelName = `ticket-${safeName}`;
+
+      // Kiểm tra ticket đã tồn tại chưa
+      const existing = interaction.guild.channels.cache.find(c => c.name === channelName);
+      if (existing) {
+        return interaction.editReply({
+          content: `⚠️ Bạn đã có ticket rồi: ${existing}`,
+          embeds: [],
+          components: []
+        });
+      }
 
       const channel = await interaction.guild.channels.create({
         name: channelName,
@@ -245,12 +267,22 @@ client.on("interactionCreate", async interaction => {
         components: [buttons]
       });
 
-      await interaction.update({
+      // Cập nhật ephemeral message
+      await interaction.editReply({
         content: `✅ Ticket của bạn đã được tạo: ${channel}`,
         embeds: [],
         components: []
       });
     }
+
+  } catch (err) {
+    console.error("❌ Lỗi interaction:", err?.message || err);
+    // Cố gắng báo lỗi cho user nếu chưa reply
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "❌ Có lỗi xảy ra, vui lòng thử lại.", ephemeral: true });
+      }
+    } catch {}
   }
 });
 
